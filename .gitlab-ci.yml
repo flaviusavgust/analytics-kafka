@@ -1,0 +1,106 @@
+image: registry.query.consul:5000/terrafrom:latest
+
+variables:
+  TF_ROOT: ${CI_PROJECT_DIR}
+  TF_VAR_kafka_role: ${KAFKA_ROLE}
+  TF_VAR_kafka_token: ${KAFKA_TOKEN}
+
+before_script:
+  - cd ${TF_ROOT}
+
+stages:
+  - validate
+  - plan
+  - apply
+
+validate:
+  stage: validate
+  variables:
+    TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/test
+    TF_VAR_kafka_broker: ${KAFKA_BROKER_TEST}
+  script:
+    - gitlab-terraform init
+    - gitlab-terraform validate
+  tags: [linux]
+
+plan-test:
+  stage: plan
+  needs:
+    - validate
+  variables:
+    TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/test
+    TF_VAR_kafka_broker: ${KAFKA_BROKER_TEST}
+  script:
+    - gitlab-terraform init
+    - gitlab-terraform plan
+    - gitlab-terraform plan-json
+  artifacts:
+    name: plan
+    paths:
+      - ${TF_ROOT}/plan.cache
+    reports:
+      terraform: ${TF_ROOT}/plan.json
+  only:
+    - master@di/access/analytics-kafka
+  tags: [linux]
+
+plan-prod:
+  stage: plan
+  needs:
+    - validate
+  variables:
+    TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/production
+    TF_VAR_kafka_broker: ${KAFKA_BROKER_PROD}
+  script:
+    - gitlab-terraform init
+    - gitlab-terraform plan
+    - gitlab-terraform plan-json
+  artifacts:
+    name: plan
+    paths:
+      - ${TF_ROOT}/plan.cache
+    reports:
+      terraform: ${TF_ROOT}/plan.json
+  only:
+    - master@di/access/analytics-kafka
+  tags: [linux]
+
+apply-test:
+  stage: apply
+  needs:
+    - job: plan-test
+      artifacts: true
+  variables:
+    TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/test
+    TF_VAR_kafka_broker: ${KAFKA_BROKER_TEST}
+  environment:
+    name: test
+  script:
+    - gitlab-terraform init
+    - gitlab-terraform apply
+  dependencies:
+    - plan-test
+  when: manual
+  only:
+    - master@di/access/analytics-kafka
+  tags: [linux]
+
+apply-prod:
+  stage: apply
+  needs:
+    - job: plan-prod
+      artifacts: true
+  variables:
+    TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/production
+    TF_VAR_kafka_broker: ${KAFKA_BROKER_PROD}
+  environment:
+    name: production
+  script:
+    - gitlab-terraform init
+    - gitlab-terraform apply
+  dependencies:
+    - plan-prod
+  when: manual
+  only:
+    - master@di/access/analytics-kafka
+  tags: [linux]
